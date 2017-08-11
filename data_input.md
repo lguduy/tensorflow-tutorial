@@ -11,6 +11,7 @@
 	* [tf.Coordinator tf.QueueRunner](#tfcoordinator-tfqueuerunner)
 	* [tf.train.start_queue_runners](#tftrainstart_queue_runners)
 	* [官方推荐模板](#官方推荐模板)
+* [测试](#测试)
 
 <!-- /code_chunk_output -->
 
@@ -209,7 +210,8 @@ def read_and_decode(TFRecord_file, batch_size, one_hot, standardized=True):
 
         # standardized
         # 训练网络时，需要标准化
-        # 测试函数时，需要把读取的图片显示出来，标准化后会显示异常，不需要标准化
+        # 测试这个函数时，需要把读取的图片显示出来，标准化后会显示异常，不需要标准化
+        # 当训练出现异常时，也方便debug，观察训练数据是否异常
         if standardized:
             image = tf.image.per_image_standardization(image)
 
@@ -229,7 +231,8 @@ def read_and_decode(TFRecord_file, batch_size, one_hot, standardized=True):
             n_classes = NUM_CLASSES
             label_batch = tf.one_hot(label_batch, depth=n_classes)
 
-            # tf.one_hot之后label的类型变为tf.float32，后面运行会出bug,再次调用tf.cast
+            # tf.one_hot之后label的类型变为tf.float32，后面运行会出bug
+            # 所以在这里再次调用tf.cast
             label_batch = tf.cast(label_batch, tf.int32)
 
             label_batch = tf.reshape(label_batch, [batch_size, n_classes])
@@ -239,7 +242,7 @@ def read_and_decode(TFRecord_file, batch_size, one_hot, standardized=True):
     return image_batch, label_batch
 ```
 
-值得注意的有两点，标准化和one_hot。
+值得注意的有两点，**标准化和one_hot**.
 
 ## 在主程序中调用read_and_decode()函数
 
@@ -248,15 +251,14 @@ TensorFlow的Session对象是可以支持多线程的，因此多个线程可以
 并且并行地执行操作。然而，在Python程序实现这样的并行运算却并不容易。所有线程都必须能被同步终止，
 异常必须能被正确捕获并报告，会话终止的时候， 队列必须能被正确地关闭。
 
-所幸TensorFlow提供了两个类来帮助多线程的实现：**tf.Coordinator和tf.QueueRunner**。从设计上这两个类必须被一起使用。
+TensorFlow提供了两个类来帮助**多线程**的实现：**tf.Coordinator和tf.QueueRunner**。
+从设计上这两个类必须被一起使用。
 
 ### tf.Coordinator tf.QueueRunner
 
 **tf.train函数添加 *QueueRunner* 到你的数据流图中**
 
 *QueueRunner*: Holds a list of enqueue operations for a queue, each to be in a thread.
-
-
 
 * Coordinator: 这是负责在收到任何关闭信号的时候，让所有的线程都知道。最常用的是在发生异常时这
 种情况就会呈现出来，比如说其中一个线程在运行某些操作时出现错误（或一个普通的Python异常）。
@@ -303,4 +305,89 @@ finally:
 # Wait for threads to finish.
 coord.join(threads)
 sess.close()
+```
+
+## 测试
+
+首先将自己的数据写入TFRecords文件
+
+```python
+# Main
+if __name__ == '__main__':
+    # figure dir
+    project_dir = os.getcwd()
+    figure_dir = os.path.join(project_dir, 'figure')
+
+    # get list of images path and list of labels
+    train_img, train_labels, val_img, val_labels, test_img, test_labels = getDatafile(figure_dir,
+                                                                                      train_size=0.67,
+                                                                                      val_size=0.1)
+    # convert TFRecord file
+    TFRecord_list = ['train', 'val', 'test']
+    img_labels_list = [[train_img, train_labels], [val_img, val_labels], [test_img, test_labels]]
+    save_dir = os.getcwd()
+    for index, TFRecord_name in enumerate(TFRecord_list):
+        convert_to_TFRecord(img_labels_list[index][0], img_labels_list[index][1],
+                            save_dir,
+                            TFRecord_name)
+```
+
+调用read_and_decode()函数从TFRecords文件中读取数据，并利用matplotlib将图片展示出来
+
+```python
+import os
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+from frame.frame_input import read_and_decode
+
+
+if __name__ == '__main__':
+    # 随机设置，一个batch内样本数
+    BATCH_SIZE = 6
+    # file dir
+    project_dir = os.getcwd()
+    # TFRecord file
+    TFRecord_file_list = ['train.tfrecords', 'val.tfrecords', 'test.tfrecords']
+    TFRecord_file = os.path.join(project_dir, 'cache', TFRecord_file_list[0])
+
+    # 调用read_and_decode()函数
+    image_batch, label_batch = read_and_decode(TFRecord_file,
+                                               batch_size=BATCH_SIZE,
+                                               one_hot=True,
+                                               standardize=False)
+
+    # 开启一个session
+    with tf.Session() as sess:
+				# 控制读取的batch数
+        i = 0
+				# Coordinator()
+        coord = tf.train.Coordinator()
+				# 调用start_queue_runners启动QUEUERUNNER
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+        try:
+            while not coord.should_stop() and i < 1:
+                # run
+                img, label = sess.run([image_batch, label_batch])
+
+                # 可视化图片和标签
+                img_ = np.uint8(img)              # float to uint8
+                label_ = np.argmax(label, 1)      # one hot to int
+
+                # just test one batch
+                for j in xrange(BATCH_SIZE):
+                    print 'label: {}'.format(label_[j])
+										# 第一维是batch_size
+                    plt.imshow(img_[j, ...])
+                    plt.show()
+                i += 1
+
+        except tf.errors.OutOfRangeError:
+            print 'Done!'
+        finally:
+            coord.request_stop()
+
+        coord.join(threads)
 ```
