@@ -358,7 +358,7 @@ if __name__ == '__main__':
                                                one_hot=True,
                                                standardize=False)
 
-    # 开启一个session
+    # 启动一个session
     with tf.Session() as sess:
 				# 控制读取的batch数
         i = 0
