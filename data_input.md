@@ -198,7 +198,7 @@ def read_and_decode(TFRecord_file, batch_size, one_hot, standardized=True):
         features = tf.parse_single_example(values,
                                            features={
                                                'label': tf.FixedLenFeature([], tf.int64),
-                                               'image_raw': tf.FixedLenFeature([], tf.string),
+                                               'image_raw': tf.FixedLenFeature([], tf.string)
                                            })
         # decode to tf.uint8
         image = tf.decode_raw(features['image_raw'], tf.uint8)  # tf.uint8
@@ -229,12 +229,11 @@ def read_and_decode(TFRecord_file, batch_size, one_hot, standardized=True):
         # one hot
         if one_hot:
             n_classes = NUM_CLASSES
-            label_batch = tf.one_hot(label_batch, depth=n_classes)
 
-            # tf.one_hot之后label的类型变为tf.float32，后面运行会出bug
-            # 所以在这里再次调用tf.cast
-            label_batch = tf.cast(label_batch, tf.int32)
-
+						# tf.one_hot
+						# 输入的label_batch是tf.int32类型，如果不提供dtype，会默认tf.float32，程序
+						# 后面会报错，要指定dtype=tf.int32
+            label_batch = tf.one_hot(label_batch, depth=n_classes, dtype=tf.int32)
             label_batch = tf.reshape(label_batch, [batch_size, n_classes])
         else:
             label_batch = tf.reshape(label_batch, [batch_size])

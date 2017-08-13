@@ -315,4 +315,4 @@ def accuracy(logits, labels):
 
 ## 总结
 
-深度学习三要素（模型 策略 算法）再加上输入数据流就构成了TensorFlow的Graph。
+深度学习三要素（模型 策略 算法）再加上输入数据管线就构成了一个完整的TensorFlow的Graph。
